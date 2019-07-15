@@ -253,6 +253,15 @@ func main() {
 
 	//将prometheus数据http协议抛出
 	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html>
+	        <head><title>check_exporter</title></head>
+	        <body>
+	        <h1>check_exporter</h1>
+	        <p><a href='metrics'>Metrics</a></p>
+	        </body>
+	        </html>`))
+	})
 	//log.Fatal(http.ListenAndServe(":8080", nil))
 	log.Fatal(http.ListenAndServe(":"+prometheus_port, nil))
 }
