@@ -9,3 +9,5 @@ config.ini文件为注册中心zk登录信息，目前zk认证仅支持digest方
 prometheus抛出信息为
 registry_service_status{address="xxxxxx",application="xxxxxx",interface="xxxxxx",port="xxxxxx",registry_center="dubbo",roles="providers"} 1
 正常为1,异常（主机禁用，半权）为2。若生产者down掉会脱离zk，信息缺失，所以为0的情况，为后续修改版本。
+
+新增dubbo_service_count  metrics，程序内统计好服务数量

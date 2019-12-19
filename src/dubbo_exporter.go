@@ -75,10 +75,12 @@ func readChildService(zkhosts string,authstr string,readpath []string) []string 
 	}
 
 	var urlList []string
-	for i:=1;i<len(readpath);i++{
+	for i:=0;i<len(readpath);i++{
 		children, _, _ := conn.Children(readpath[i])
-    for j:=1;j<len(children);j++{
+		//fmt.Println(readpath)
+    for j:=0;j<len(children);j++{
 			urlList = append(urlList,children[j])
+			//fmt.Println(children[j])
 		}
 	}
 	defer conn.Close()
@@ -112,7 +114,7 @@ func ParseStr(urlstr string,roles string) []string{
 	dubbodic := make(map[string]string)
 	//zk上检查到的都默认为在线状态，1，如果看到有降级标志，置为2
 	dubbodic[key7] = "1"
-	for i:=1;i<len(vallist);i++{
+	for i:=0;i<len(vallist);i++{
 		switch {
 			case strings.Contains(vallist[i], key1+"="):
 				dubbodic[key1]=strings.Split(vallist[i],"=")[1]
@@ -147,7 +149,7 @@ func ParseConfigStr(urlstr string)[]string{
 	configvallist := strings.Split(tmpvallist1[0],"/")
 	var addressstr,portstr,rolesstr,interfacestr string
 	if strings.Contains(configvallist[2],":"){
-		fmt.Println(configvallist[2])
+		// fmt.Println(configvallist[2])
 		addressstr = strings.Split(configvallist[2],":")[0]
 		portstr = strings.Split(configvallist[2],":")[1]
 		rolesstr = "providers"
@@ -192,12 +194,12 @@ func ParseConfigUrl(urlList []string) [][]string{
 //收集dubbo的信息
 func collecter(zkhosts string,authstr string,rootpath string) [][]string{
 	serviceList := readChildFromZK(zkhosts,authstr,rootpath)
+	// fmt.Println(serviceList)
 	var providerPath []string
 	for i:=0;i<len(serviceList);i++{
 		providerPath = append(providerPath,rootpath+"/"+serviceList[i]+"/providers")
 	}
 	dubboUrlList := readChildService(zkhosts,authstr,providerPath)
-
 	var dubboServiceInfo [][]string
 	dubboServiceInfo = ParseDubboUrl(dubboUrlList,"providers")
 
@@ -225,6 +227,15 @@ var (
 	)
 )
 
+var (
+	servicecount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "dubbo_service_count",
+		Help: "check dubbo service registry count",
+	},
+	[]string{"registry_center", "interface", "roles"},
+	)
+)
+
 //主函数入口
 func main() {
 	//解析confpath参数
@@ -234,18 +245,54 @@ func main() {
 	zkhosts,authstr,rootpath,prometheus_port := readconf(confpath)
 	//注册prometheus结构参数
 	prometheus.MustRegister(servicestatus)
+	prometheus.MustRegister(servicecount)
 	//并发执行获取dubbo信息并解析
 	go func(){
+		var dubboServiceInfo [][]string
+		service_count := make(map[string]int)
 		for{
+			// 重置count计数
+			for key, _ := range service_count {
+				service_count[key] = 0
+			} 
+
+			// 由于dubbo掉服务后会少数据，之前存在的metrics就不会覆盖赋值，仍然存在，所以需要Reset来重置
+			servicestatus.Reset()
+			// fmt.Println(dubboServiceInfo)
 			fmt.Println("==========new metrics==========")
 			//获取到的数据放 dubboServiceInfo 中
-			dubboServiceInfo := collecter(zkhosts,authstr,rootpath)
+			dubboServiceInfo = collecter(zkhosts,authstr,rootpath)
 			for i:=0;i<len(dubboServiceInfo);i++{
 				//将状态值转换为float64，prometheus接受的格式
 				v1, _ :=strconv.ParseFloat(dubboServiceInfo[i][6],64)
 				//以label加数值的形式抛出
 				servicestatus.With(prometheus.Labels{"registry_center":"dubbo", "application":dubboServiceInfo[i][0], "interface":dubboServiceInfo[i][1], "address":dubboServiceInfo[i][3], "port":dubboServiceInfo[i][4], "roles":dubboServiceInfo[i][5]}).Set(v1)
+				// 每次将service/interface的值统计后进行输出
+				if _, ok := service_count[dubboServiceInfo[i][1]]; ok{
+					service_count[dubboServiceInfo[i][1]] = service_count[dubboServiceInfo[i][1]]+1
+				} else {
+					service_count[dubboServiceInfo[i][1]] = 1
+				}
+				
+				// 使用完后，将状态置为0，下次采集时，会重新赋值，若服务掉线就显示为0.若不为0，会出现服务掉线后状态保持不变的情况
+				// if dubboServiceInfo[i][0] == "proandmu-message-service-provider"{
+				// 	fmt.Println(dubboServiceInfo[i])
+				// }
+				
+				// dubboServiceInfo[i][6] = "0"
+				// prometheus.Unregister(servicestatus)
+				
 			}
+			// fmt.Println(*servicestatus)
+
+			// 输出每轮count的值进metrics
+			for key, _ := range service_count {
+				fmt.Println(key)
+				fmt.Println(service_count[key])
+				servicecount.With(prometheus.Labels{"registry_center":"dubbo", "interface":key, "roles":"provider"}).Set(float64(service_count[key]))
+			} 
+			// fmt.Println(service_count)
+
 			//执行完一次后，60秒后下一次执行
 			time.Sleep(time.Duration(60)*time.Second)
 		}
