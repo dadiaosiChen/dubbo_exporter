@@ -274,16 +274,8 @@ func main() {
 					service_count[dubboServiceInfo[i][1]] = 1
 				}
 				
-				// 使用完后，将状态置为0，下次采集时，会重新赋值，若服务掉线就显示为0.若不为0，会出现服务掉线后状态保持不变的情况
-				// if dubboServiceInfo[i][0] == "proandmu-message-service-provider"{
-				// 	fmt.Println(dubboServiceInfo[i])
-				// }
-				
-				// dubboServiceInfo[i][6] = "0"
-				// prometheus.Unregister(servicestatus)
 				
 			}
-			// fmt.Println(*servicestatus)
 
 			// 输出每轮count的值进metrics
 			for key, _ := range service_count {
